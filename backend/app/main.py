@@ -1,9 +1,13 @@
 # main.py
 
 import os
+from contextlib import asynccontextmanager
 
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 from starlette.responses import StreamingResponse
-
+from app.database import init_db, async_session
+from app.models import Task
 from app.schemas import AITask, CodeCheckRequest
 from app.services.llm_service import QwenTaskGenerator
 
@@ -16,7 +20,7 @@ logging.basicConfig(
 import json
 import time
 from datetime import datetime
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 
@@ -30,11 +34,24 @@ logger = logging.getLogger(__name__)
 # 初始化 AI 任务生成器
 generator = QwenTaskGenerator()
 
+# 定义生命周期管理器
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 【启动时执行】
+    print("🚀 正在初始化数据库...")
+    await init_db()
+    print("✅ 数据库初始化完成！")
+    yield
+    # 【关闭时执行】
+    print("🛑 正在关闭服务...")
+
+
 # 创建 FastAPI 应用
 app = FastAPI(
     title="AI Task Generator",
     description="使用 Qwen3 自动生成每日开发任务",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 app.add_middleware(
@@ -45,107 +62,67 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+async def get_db():
+    async with async_session() as session:
+        yield session
+
 #endregion
 
 #region 历史数据
 
-#定义历史数据存储位置
-TASKS_FILE = "tasks_db.json"
-
-#启动时加载历史数据
-def load_history():
-    if os.path.exists(TASKS_FILE):
-        with open(TASKS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
-
 
 async def save_task_result(task_id: int, user_code: str, feedback: str):
     """
-    这是传给 service 的回调函数
+    更新数据库中已存在任务的代码和反馈
     """
-    # 1.读取现有文件
-    tasks = []
-    if os.path.exists(TASKS_FILE):
-        with open(TASKS_FILE, "r", encoding="utf-8") as f:
-            tasks = json.load(f)
+    try:
+        async with async_session() as db:
+            # 1. 找到对应的任务
+            result = await db.execute(select(Task).filter(Task.id == task_id))
+            task = result.scalar_one_or_none()
 
-    # 2.找到对应的任务并更新
-    for t in tasks:
-        if t["id"] == task_id:
-            t["user_code"] = user_code
-            t["feedback"] = feedback
-            break
-    # 3.写回文件
-    with open(TASKS_FILE, "w", encoding="utf-8") as f:
-        json.dump(tasks, f, ensure_ascii=False, indent=2)
-    logger.info(f"任务 {task_id} 记录已持久化。")
+            if task:
+                # 2. 更新字段
+                task.user_code = user_code
+                task.feedback = feedback
+                task.status = "已完成"  # 既然有了反馈，通常意味着任务完成了
+
+                # 3. 提交更改
+                await db.commit()
+                logger.info(f"✅ 任务 {task_id} 的代码和反馈已更新到数据库。")
+            else:
+                logger.warning(f"⚠️ 未找到 ID 为 {task_id} 的任务，无法更新。")
+    except Exception as e:
+        logger.error(f"❌ 更新任务结果失败: {e}")
 
 
 #endregion
 
 # region 路由
-@app.get("/task/today", response_model=AITask)
-async def get_today_task():
-    try:
-        # 现在 generate_task() 返回 dict
-        task_dict = await generator.generate_task()
-        # 动态设置 created_at
-        import time
-        task_dict["id"] = int(time.time())
-        task_dict["created_at"] = datetime.now().strftime("%Y-%m-%d")
-        tasks = load_history()
-        tasks.insert(0, task_dict)
-        with open(TASKS_FILE, "w", encoding="utf-8") as f:
-            json.dump(tasks[:20], f, ensure_ascii=False, indent=2)
+@app.get("/task/history")
+async def get_task_history(db: AsyncSession = Depends(get_db)):
+    # SQL: SELECT * FROM tasks ORDER BY id DESC
+    result = await db.execute(select(Task).order_by(Task.id.desc()))
+    tasks = result.scalars().all()
+    return tasks
 
-        return AITask(**task_dict)
-    except Exception as e:
-        logger.error(f"生成任务失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/task/history", response_model=List[AITask])
-async def get_task_history():
-    """
-    直接从 JSON 文件读取并返回
-    """
-    try:
-        # 直接调用你上面定义好的加载函数
-        tasks_data = load_history()
-        # 转换成 Pydantic 模型列表（只取最近 10 条）
-        return [AITask(**task) for task in tasks_data[:10]]
-    except Exception as e:
-        logger.error(f"获取历史任务失败: {str(e)}")
-        return []
-
-@app.get("/task/stream")
-async def get_stream():
-    async def save_new_task(full_task_json_str: str):
-        try:
-            # 2. 补全后端数据：ID 和 时间
-            new_task_dict = {
-                "id": int(time.time()),
-                "description": full_task_json_str.strip(),  # 直接使用传入的参数
-                "status": "待处理",
-                "priority": "中",
-                "estimated_hours": 1,
-                "tags": ["Python", "每日挑战"],
-                "created_at": datetime.now().strftime("%Y-%m-%d"),
-                "user_code": None,
-                "feedback": None
-            }
-
-            # 3. 读取并更新文件
-            tasks = load_history()
-            tasks.insert(0, new_task_dict)
-            with open(TASKS_FILE, "w", encoding="utf-8") as f:
-                json.dump(tasks[:20], f, ensure_ascii=False, indent=2)
-            logger.info(f"✅ 流式生成的任务 {new_task_dict['id']} 已成功落盘")
-        except Exception as e:
-            logger.error(f"❌ 自动保存流式任务失败: {e}")
-
+@app.get("/task/stream/{task_id}")
+async def get_stream(task_id: int):
+    # 这里的参数名和逻辑完全遵循你源码中的定义
+    # 定义完成时的回调：更新那条已经存在的记录
+    async def update_task_content(full_task_json_str: str):
+        async with async_session() as db:
+            result = await db.execute(select(Task).filter(Task.id == task_id))
+            task_record = result.scalar_one_or_none()
+            if task_record:
+                task_record.description = full_task_json_str.strip()
+                task_record.status = "进行中"  # 生成完了，状态改为进行中
+                await db.commit()
+                logger.info(f"✅ 任务 {task_id} 的内容已同步至数据库")
+    # 保持你原有的 StreamingResponse 调用方式
     return StreamingResponse(
-        generator.stream_generate_task(on_complete=save_new_task),
+        generator.stream_generate_task(on_complete=update_task_content),
         media_type="text/event-stream"
     )
 
@@ -164,5 +141,28 @@ async def check_task_code(request: CodeCheckRequest):
         media_type="text/event-stream"
     )
 
+# 新增：预创建任务接口
+@app.post("/task/create")
+async def create_task_placeholder(db: AsyncSession = Depends(get_db)):
+    try:
+        # 1. 立即创建一个占位任务
+        new_task = Task(
+            description="",  # 暂时为空
+            status="生成中",
+            priority="中",
+            estimated_hours=1,
+            tags=["Python", "每日挑战"],
+            created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            user_code=None,
+            feedback=None
+        )
+        db.add(new_task)
+        await db.commit()
+        await db.refresh(new_task)  # 拿到真正的数据库自增 ID
+        logger.info(f"✅ 已预创建数据库记录，ID: {new_task.id}")
+        return {"id": new_task.id}
+    except Exception as e:
+        logger.error(f"❌ 预创建任务失败: {e}")
+        raise HTTPException(status_code=500, detail="创建任务失败")
 
 #endregion
