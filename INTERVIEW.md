@@ -41,4 +41,82 @@
 
 ---
 
+---
+
+### 3.21
+
+直接给结论：**这种结构（While 嵌套 For）在正式工程中是标准写法，但在具体实现上存在一个“严重隐患”和一个“性能优化点”。**
+
+---
+
+### 1. 会有顺序问题吗？（关于 FIFO）
+**不会有顺序问题。**
+* **TCP/HTTP 保障**：底层网络协议保证了数据包是按顺序到达的。
+* **Reader 顺序读取**：`reader.read()` 是一个先进先出（FIFO）的队列，它会严格按照后端发送的顺序读取。
+* **同步执行**：在 `while` 循环里，`await reader.read()` 会挂起当前执行流，直到拿到这一块（Chunk）数据。里面的 `for` 循环也是同步执行的。所以，字符“你好”绝对不会变成“好你”。
+
+---
+
+### 2. 会有性能问题吗？（关于渲染频率）
+**确实存在潜在的性能瓶颈。**
+* **问题所在**：不在于嵌套循环（因为 `lines` 通常只有 1-5 行，CPU 处理这个极快），而在于 **Vue 的响应式系统**。
+* **场景**：如果后端推送速度极快（比如一秒钟推 100 个小包），你的代码会触发 100 次 `task.value.description += content`。每次赋值都会触发 Vue 的依赖收集、DOM Diff、以及 `TaskView.vue` 里那个 `md.render`（Markdown 渲染）。
+* **结果**：在大文本生成时，浏览器可能会因为频繁的样式计算和重绘（Repaint）导致风扇狂转。
+
+
+
+---
+
+### 3. 正式工程中的那个“严重隐患”：数据截断
+这是最致命的问题。`reader.read()` 返回的 `value`（Chunk）是根据网络缓冲区大小决定的，它**不保证**一定是以 `\n\n` 结尾的完整包。
+
+* **隐患场景**：后端发了 `data: hello\n\n`。但因为网络原因，`reader.read()` 第一次只拿到了 `data: hel`。
+* **你的代码逻辑**：`split('\n\n')` 找不到分隔符，于是这半个包就被处理了（或者报错了），而剩下的 `lo\n\n` 在下一次循环才到。
+* **后果**：如果是简单的字符串追加，可能看不出问题；但如果以后我们要解析 JSON（比如 `data: {"id": 1...`），这种截断会导致 `JSON.parse` 直接崩溃。
+
+---
+
+### 🎤 面试要点：如何优雅地处理流式解析？
+
+如果面试官问：“你如何处理 SSE 流中的半个数据包问题？”
+
+* **回答方案：缓冲区（Buffer）累加法**。
+    在 `while` 循环外定义一个 `leftover` 变量，把没处理完的字符串存起来，等下次循环拼在一起处理。
+
+```typescript
+let leftover = '' // 专门存“半个包”的缓冲区
+
+while (true) {
+  const { done, value } = await reader.read()
+  if (done) break
+
+  // 1. 将新数据与上次剩下的“半个包”拼接
+  const chunk = leftover + decoder.decode(value, { stream: true })
+  const lines = chunk.split('\n\n')
+
+  // 2. 最后一行通常是不完整的（或者后面没跟 \n\n），把它提出来存入 leftover
+  leftover = lines.pop() || '' 
+
+  for (const line of lines) {
+    if (line.startsWith('data: ')) {
+      const content = line.replace('data: ', '')
+      // ... 更新逻辑
+    }
+  }
+}
+```
+
+---
+
+
+### 🎤 面试要点：为什么这里要用 `fetch` 而不是 `EventSource`？
+
+面试官可能会问：*“标准的 SSE 应该用浏览器自带的 `new EventSource()`，你为什么要用 `fetch` + `getReader()`？”*
+
+**核心知识点（你的加分回答）：**
+1. **POST 支持**：`EventSource` 只支持 GET 请求。但在实际工程中（比如你的 `checkTask` 接口），我们需要发送大量的用户代码给后端，必须用 POST，这时候 `fetch` 是唯一选择。
+2. **Header 自定义**：`fetch` 可以方便地添加 `Authorization` 等请求头，而 `EventSource` 原生支持很差。
+3. **细粒度控制**：通过 `reader.read()`，我们可以更精准地控制读取的时机，这也是实现“分帧/缓冲区”优化的前提。
+
+---
 

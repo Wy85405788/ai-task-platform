@@ -107,7 +107,7 @@ async def get_task_history(db: AsyncSession = Depends(get_db)):
     return tasks
 
 
-@app.get("/task/stream/{task_id}")
+@app.get("/task/stream")
 async def get_stream(task_id: int):
     # 这里的参数名和逻辑完全遵循你源码中的定义
     # 定义完成时的回调：更新那条已经存在的记录
