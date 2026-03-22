@@ -58,8 +58,8 @@ app = FastAPI(
 ALLOWED_ORIGINS = [
     "http://localhost:5173",  # 本地 Vite 默认端口
     "http://127.0.0.1:5173",
-    #TODO:后面有了地址加上，还有前端env文件也要改
-    "https://your-frontend-app.vercel.app" # 预留你未来的前端线上地址
+    "https://ai-task-platform-production-51a4.up.railway.app/" # 预留你未来的前端线上地址
+    "https://ai-task-platform-production-51a4.up.railway.app" # 预留你未来的前端线上地址
 ]
 
 
