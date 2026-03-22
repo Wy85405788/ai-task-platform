@@ -54,9 +54,18 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# 获取允许的来源，如果是本地开发就允许所有，如果是生产环境就指定域名
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",  # 本地 Vite 默认端口
+    "http://127.0.0.1:5173",
+    #TODO:后面有了地址加上，还有前端env文件也要改
+    "https://your-frontend-app.vercel.app" # 预留你未来的前端线上地址
+]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

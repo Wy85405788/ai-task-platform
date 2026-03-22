@@ -15,7 +15,7 @@ export const useTaskStore = defineStore('task', () => {
   const error = ref<string | null>(null)
 
   const sse = useSSE();
-
+  const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 
   // --- 动作 (Actions) ---
@@ -23,7 +23,7 @@ export const useTaskStore = defineStore('task', () => {
   // 1. 获取历史记录
   const fetchHistory = async () => {
     try {
-      const response = await fetch('http://localhost:8003/task/history')
+      const response = await fetch(`${API_BASE}/task/history`)
       const data: ITask[] = await response.json() // 强制要求符合接口
       if (response.ok) {
         historyTasks.value = data
@@ -46,7 +46,7 @@ export const useTaskStore = defineStore('task', () => {
 
     try {
       // 1. 【关键一步】先向后端申请真实的数据库 ID
-      const createRes = await fetch('http://localhost:8003/task/create', {
+      const createRes = await fetch(`${API_BASE}/task/create`, {
         method: 'POST'
       })
       if (!createRes.ok) throw new Error('初始化任务失败')
@@ -63,7 +63,7 @@ export const useTaskStore = defineStore('task', () => {
         created_at: new Date().toLocaleString()
       }
       // 调用 Composable，逻辑极其清晰
-      await sse.run(`http://localhost:8003/task/stream?task_id=${id}`, { method: 'GET' }, (content) => {
+      await sse.run(`${API_BASE}/task/stream?task_id=${id}`, { method: 'GET' }, (content) => {
         if (loading.value) loading.value = false // 首字节关闭 loading
         if (task.value) task.value.description += content
       })
@@ -82,7 +82,7 @@ export const useTaskStore = defineStore('task', () => {
     feedback.value = ''
 
     try {
-      await sse.run('http://localhost:8003/task/check', {
+      await sse.run(`${API_BASE}/task/check`, {
             method: 'POST',
             body: { task_id: task.value.id, user_code: userCode.value, task_description: task.value.description }
           }, (content) => {

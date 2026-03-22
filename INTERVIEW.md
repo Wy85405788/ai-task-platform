@@ -120,3 +120,12 @@ while (true) {
 
 ---
 
+**在 Vite 项目中，环境变量为什么要加 VITE_ 前缀？**
+
+“这是 Vite 的安全机制。只有以 VITE_ 开头的变量才会被注入到客户端代码中。这样做可以防止不小心把服务器端的敏感信息（如数据库密码、API密钥）暴露给浏览器端的 JavaScript，确保了前端代码的安全性。”
+
+---
+
+** 普通的 API 跨域我懂，但 SSE（流式传输）跨域有什么特殊要求吗？**
+“SSE 本质上是一个持久的 HTTP 连接。在跨域场景下，除了常规的 `Access-Control-Allow-Origin`，浏览器还要求后端必须保持 `Content-Type: text/event-stream`。
+另外，如果前端配置了 `withCredentials: true` 来携带 Cookie，那么后端的 `allow_origins` 就绝对不能写成 `*`，必须是具体的域名，否则浏览器会出于安全策略直接拦截连接。”
