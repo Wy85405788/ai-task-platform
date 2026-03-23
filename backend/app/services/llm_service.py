@@ -19,29 +19,37 @@ class QwenTaskGenerator:
         self.model = "qwen3-max-2026-01-23"
     #流式生成任务
     async def stream_generate_task(self, on_complete=None):
-        full_response = ""
         """
         核心逻辑：流式生产
         """
+        full_response = ""
         response = await self.client.chat.completions.create(
             model=self.model,
             messages=[
                 {"role": "system", "content": "你是一个幽默的编程导师。"},
                 {"role": "user", "content": "给我布置一个今天的 Python 小挑战。"}
             ],
-            stream=True  # 🔥 开启流式传输
+            stream=True,  # 🔥 开启流式传输
+            stream_options={ "include_usage": True}
         )
-
+        # 这里用 async for 不用while是为了让cpu不被一直占用，这是处理并发的关键
         async for chunk in response:
             # 提取碎片内容
-            content = chunk.choices[0].delta.content
-            if content:
+            if chunk.choices and chunk.choices[0].delta.content:
+                content = chunk.choices[0].delta.content
                 full_response += content
                 # SSE 协议要求以 data: 开头，以 \n\n 结尾
                 yield f"data: {content}\n\n"
+            if chunk.usage:
+                print(f"输入 Tokens: {chunk.usage.prompt_tokens}")
+                print(f"输出 Tokens: {chunk.usage.completion_tokens}")
+                print(f"总计 Tokens: {chunk.usage.total_tokens}")
+
+
         # 流结束，触发保存
         if on_complete:
             await on_complete(full_response)
+
 
 
 

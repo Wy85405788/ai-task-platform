@@ -118,3 +118,38 @@
     2.  解决跨域（CORS）限制。
     3.  实现 SQLite 数据库在云端的持久化存储。
 
+  
+---
+
+## 📝 技术复盘：项目 1 端到端部署实战
+**日期：2026-03-22 (第一周 · 第 6 天)**
+**项目名称：AI 编程任务平台 (AI Task Platform)**
+
+### 1. 核心架构与逻辑优化
+* **数据库路径动态解耦**：
+    * 通过 `os.environ.get("DB_PATH", ...)` 实现了环境自适应逻辑。
+    * **本地环境**：自动 fallback 到 `backend` 根目录下的 `tasks.db`，方便开发调试。
+    * **云端环境**：优先读取环境变量 `DB_PATH=/data/tasks.db`，完美对接持久化卷。
+* **目录鲁棒性处理**：
+    * 在数据库初始化前加入 `os.makedirs(db_dir, exist_ok=True)`，解决了云端挂载卷初始状态为空目录可能导致的程序崩溃问题。
+
+### 2. 云原生部署实战 (Railway & Vercel)
+* **后端持久化 (Railway)**：
+    * 成功挂载 **Persistent Volume** 到 `/data` 路径。
+    * 验证了“容器重启/重新部署”后，SQLite 数据依然存在的关键特性，确保了任务历史的安全性。
+* **前端静态托管 (Vercel)**：
+    * 完成了 `VITE_API_BASE_URL` 环境变量的注入，实现了前后端公网联调。
+    * 通过 `vercel.json` 解决了 SPA 路由在刷新时的 404 问题。
+
+### 3. AI 交互与流式响应
+* **SSE (Server-Sent Events)**：
+    * 复盘了 FastAPI `StreamingResponse` 与前端 `EventSource` (或 Fetch 流) 的配合。
+    * 实现了打字机效果，显著提升了 AI 生成编程题目时的用户感知体验。
+
+
+
+---
+
+### 📅 下一步预告：
+* **明天 (2026-03-23)**：**复习日**。建议重点对比 Python 与 JS 在处理 `text/event-stream` 时的异同点，并整理一份属于你自己的“跨域与环境配置”避坑指南。
+* **后天 (2026-03-24)**：**开启第二周：LangChain 基础**。我们将学习 `LLMChain` 和 `PromptTemplate`，把现在的出题逻辑升级得更模块化。

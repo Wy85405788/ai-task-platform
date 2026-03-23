@@ -119,7 +119,7 @@ async def get_task_history(db: AsyncSession = Depends(get_db)):
 async def get_stream(task_id: int):
     # 这里的参数名和逻辑完全遵循你源码中的定义
     # 定义完成时的回调：更新那条已经存在的记录
-    async def update_task_content(full_task_json_str: str):
+    async def update_task_content(full_task_json_str: str, token_usage: int = 0):
         async with async_session() as db:
             result = await db.execute(select(Task).filter(Task.id == task_id))
             task_record = result.scalar_one_or_none()

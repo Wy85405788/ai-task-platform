@@ -27,3 +27,5 @@ class Task(Base):
     feedback: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # 创建时间
     created_at: Mapped[str] = mapped_column(String(20))
+    # 使用token数量
+    token_usage: Mapped[int] = mapped_column(Integer, default=0, nullable=True)
