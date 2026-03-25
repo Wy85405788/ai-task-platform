@@ -129,3 +129,9 @@ while (true) {
 ** 普通的 API 跨域我懂，但 SSE（流式传输）跨域有什么特殊要求吗？**
 “SSE 本质上是一个持久的 HTTP 连接。在跨域场景下，除了常规的 `Access-Control-Allow-Origin`，浏览器还要求后端必须保持 `Content-Type: text/event-stream`。
 另外，如果前端配置了 `withCredentials: true` 来携带 Cookie，那么后端的 `allow_origins` 就绝对不能写成 `*`，必须是具体的域名，否则浏览器会出于安全策略直接拦截连接。”
+
+
+Day8的LangChain，现在LangChain更新很快，网上很多教程已经过时了，特别是LLMChain这个API在新版本里已经被LCEL（LangChain Expression Language）替代。学的时候注意看文档版本，别跟着老教程走弯路。
+Day9-10，PDF解析和Chroma向量数据库是纯工程内容，对你来说不难，但Embedding这个概念值得花时间真正理解，不要只会调API。
+Day11是整周最重要的一天，RAG核心原理在这里，不要赶进度。
+Day13的项目，"智能财报分析工具"这个场景选得很好，垂直领域+文档处理，ToB面试很有说服力。

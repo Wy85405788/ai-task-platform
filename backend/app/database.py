@@ -2,6 +2,8 @@ import os
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 from app.models import Base
+
+
 # 1. 获取当前文件 (database.py) 的绝对路径
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -39,4 +41,3 @@ async def init_db():
     async with engine.begin() as conn:
         # 这一行会扫描 models.py 里的所有类，并在数据库里建表
         await conn.run_sync(Base.metadata.create_all)
-

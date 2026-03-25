@@ -10,19 +10,17 @@ from app.database import init_db, async_session
 from app.models import Task
 from app.schemas import AITask, CodeCheckRequest
 from app.services.llm_service import QwenTaskGenerator
-
+from sqlalchemy import func
 print("main.py 已加载")
 import logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-import json
-import time
+
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List
 
 
 
@@ -79,7 +77,7 @@ async def get_db():
 #region 历史数据
 
 
-async def save_task_result(task_id: int, user_code: str, feedback: str):
+async def save_task_result(task_id: int, user_code: str, feedback: str, token_usage: int = 0):
     """
     更新数据库中已存在任务的代码和反馈
     """
@@ -94,7 +92,7 @@ async def save_task_result(task_id: int, user_code: str, feedback: str):
                 task.user_code = user_code
                 task.feedback = feedback
                 task.status = "已完成"  # 既然有了反馈，通常意味着任务完成了
-
+                task.token_usage += token_usage
                 # 3. 提交更改
                 await db.commit()
                 logger.info(f"✅ 任务 {task_id} 的代码和反馈已更新到数据库。")
@@ -116,7 +114,7 @@ async def get_task_history(db: AsyncSession = Depends(get_db)):
 
 
 @app.get("/task/stream")
-async def get_stream(task_id: int):
+async def get_stream(task_id: int, topic: str = "Python 基础"):
     # 这里的参数名和逻辑完全遵循你源码中的定义
     # 定义完成时的回调：更新那条已经存在的记录
     async def update_task_content(full_task_json_str: str, token_usage: int = 0):
@@ -126,11 +124,12 @@ async def get_stream(task_id: int):
             if task_record:
                 task_record.description = full_task_json_str.strip()
                 task_record.status = "进行中"  # 生成完了，状态改为进行中
+                task_record.token_usage += token_usage
                 await db.commit()
                 logger.info(f"✅ 任务 {task_id} 的内容已同步至数据库")
     # 保持你原有的 StreamingResponse 调用方式
     return StreamingResponse(
-        generator.stream_generate_task(on_complete=update_task_content),
+        generator.stream_generate_task(topic=topic, on_complete=update_task_content),
         media_type="text/event-stream"
     )
 
@@ -174,3 +173,4 @@ async def create_task_placeholder(db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=500, detail="创建任务失败")
 
 #endregion
+
